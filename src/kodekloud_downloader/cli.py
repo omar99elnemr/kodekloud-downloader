@@ -116,7 +116,7 @@ def dl(
             raise SystemExit(1)
         
         def refresher() -> Optional[str]:
-            return get_session_token_from_browser(auto_launch=True)
+            return get_session_token_from_browser(auto_launch=True, is_refresh=True)
             
         api_client = ApiClient(raw, token_refresher=refresher)
         logging.info("Bearer token extracted from browser successfully")

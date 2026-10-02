@@ -202,6 +202,11 @@ def download_video(
         "writesubtitles": True,
         "no_write_sub": True,
         "http_headers": headers,
+        "retries": 10,
+        "fragment_retries": 10,
+        "skip_unavailable_fragments": False,
+        "abort_on_unavailable_fragment": True,
+        "ignoreerrors": False,
     }
     if cookie is not None:
         ydl_opts["cookiefile"] = cookie

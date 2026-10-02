@@ -129,6 +129,7 @@ def _extract_bearer_token(context) -> Optional[str]:
 def get_session_token_from_browser(
     port: int = CDP_PORT,
     auto_launch: bool = False,
+    is_refresh: bool = False,
 ) -> Optional[str]:
     """Extract the Firebase Bearer token from a Chrome browser via CDP.
 
@@ -200,7 +201,7 @@ def get_session_token_from_browser(
             )
             return None
 
-        # --- Step 3: navigate to KodeKloud courses ---
+        # --- Step 3: extract token via IndexedDB ---
         try:
             context = browser.contexts[0]
         except IndexError:
@@ -209,90 +210,84 @@ def get_session_token_from_browser(
 
         page = context.pages[0] if context.pages else context.new_page()
 
-        intercepted_token: Optional[str] = None
+        def extract_from_idb():
+            return page.evaluate("""async () => {
+                return new Promise((resolve) => {
+                    let req = indexedDB.open("firebaseLocalStorageDb");
+                    req.onsuccess = (e) => {
+                        let db = e.target.result;
+                        try {
+                            let tx = db.transaction("firebaseLocalStorage", "readonly");
+                            let store = tx.objectStore("firebaseLocalStorage");
+                            let all = store.getAll();
+                            all.onsuccess = (ev) => {
+                                if (ev.target.result && ev.target.result.length > 0) {
+                                    resolve(ev.target.result[0].value.stsTokenManager.accessToken);
+                                } else {
+                                    resolve(null);
+                                }
+                            };
+                            all.onerror = () => resolve(null);
+                        } catch (err) {
+                            resolve(null);
+                        }
+                    };
+                    req.onerror = () => resolve(null);
+                });
+            }""")
 
-        def _handle_request(request):
-            nonlocal intercepted_token
-            if "learn-api.kodekloud.com" in request.url:
-                auth_header = request.headers.get("authorization", "")
-                if auth_header.lower().startswith("bearer "):
-                    intercepted_token = auth_header.split(" ", 1)[1]
-
-        page.on("request", _handle_request)
-
-        # Navigate to KodeKloud
-        logger.info("Navigating to KodeKloud to intercept token...")
+        logger.info("Checking for token in browser...")
         try:
-            page.goto(
-                "https://learn.kodekloud.com/user/courses",
-                wait_until="networkidle",
-                timeout=30000,
-            )
-        except Exception:
-            pass
+            page.goto("https://learn.kodekloud.com/user/courses", wait_until="domcontentloaded", timeout=30000)
+            token = extract_from_idb()
+            if token:
+                logger.info("Bearer token extracted successfully")
+                if chrome_proc:
+                    chrome_proc.terminate()
+                else:
+                    browser.close()
+                return token
+        except Exception as e:
+            logger.debug(f"Failed to check IndexedDB initially: {e}")
 
-        # Small pause for SPA redirects and network requests
-        for _ in range(3):
-            if intercepted_token:
-                break
-            time.sleep(1)
-
-        if intercepted_token:
-            logger.info("Bearer token intercepted successfully from network")
-            if chrome_proc is not None:
+        # If we are just refreshing in the background, don't wait or prompt the user.
+        if is_refresh:
+            if chrome_proc:
                 chrome_proc.terminate()
             else:
                 browser.close()
-            return intercepted_token
+            return None
 
         # --- Step 4: if not logged in, prompt user ---
-        current_url = page.url.lower()
-        if all(
-            word not in current_url for word in ["sign-in", "login", "auth", "signin"]
-        ):
-            try:
-                page.goto(
-                    "https://identity.kodekloud.com/sign-in",
-                    wait_until="networkidle",
-                    timeout=15000,
-                )
-            except Exception:
-                pass
+        try:
+            page.goto("https://identity.kodekloud.com/sign-in", wait_until="domcontentloaded", timeout=15000)
+        except Exception:
+            pass
 
         print(
-            "Please sign in to KodeKloud in the opened browser window, "
-            "then press Enter here..."
+            "\nPlease sign in to KodeKloud in the opened browser window.\n"
+            "Once you are successfully signed in and see your courses, press Enter here..."
         )
         try:
             input()
         except (EOFError, KeyboardInterrupt):
             pass
 
-        # Wait for the bearer token to arrive via network interception
-        logger.info("Waiting for bearer token...")
+        # Check again
         try:
-            page.goto(
-                "https://learn.kodekloud.com/user/courses",
-                wait_until="networkidle",
-                timeout=30000,
-            )
+            page.goto("https://learn.kodekloud.com/user/courses", wait_until="domcontentloaded", timeout=30000)
+            token = extract_from_idb()
         except Exception:
-            pass
+            token = None
 
-        for _ in range(20):  # wait up to ~40s
-            if intercepted_token:
-                break
-            time.sleep(2)
-
-        # Cleanup
-        if chrome_proc is not None:
+        if chrome_proc:
             chrome_proc.terminate()
         else:
             browser.close()
 
-        if intercepted_token:
+        if token:
             logger.info("Bearer token extracted successfully")
         else:
             print("Could not find bearer token. Ensure you are signed in to KodeKloud.")
 
-        return intercepted_token
+        return token
