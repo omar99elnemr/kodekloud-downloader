@@ -156,12 +156,13 @@ def dl(
         print("=" * 60)
         for r in results:
             status = "COMPLETE" if r.percentage >= 100.0 else "INCOMPLETE"
+            downloadable = r.total_lessons - r.skipped
             print(f"• {r.title}")
-            print(f"  Status:  {status} ({r.completed}/{r.total_lessons} lessons downloaded)")
+            print(f"  Status:  {status} ({r.completed}/{downloadable} downloadable lessons)")
             if r.failed > 0:
                 print(f"  Failed:  {r.failed}")
             if r.skipped > 0:
-                print(f"  Skipped: {r.skipped}")
+                print(f"  Skipped: {r.skipped} (Labs/Undownloadable)")
             print("-" * 60)
 
     try:

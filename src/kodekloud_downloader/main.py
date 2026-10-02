@@ -125,9 +125,10 @@ class CourseProgress:
 
     @property
     def percentage(self) -> float:
-        if self.total_lessons == 0:
+        downloadable = self.total_lessons - self.skipped
+        if downloadable <= 0:
             return 100.0
-        return (self.completed / self.total_lessons) * 100
+        return (self.completed / downloadable) * 100
 
 def download_course(
     course: Union[Course, CourseDetail, EnrolledCourse],
