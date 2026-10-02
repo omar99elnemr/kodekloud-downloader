@@ -67,7 +67,7 @@ def kodekloud(verbose):
     "--browser",
     is_flag=True,
     default=False,
-    help="(Legacy) Extract session token from running Chrome (requires playwright). Prefer --token.",
+    help="Automatically extract Bearer token from running Chrome (requires playwright).",
 )
 @click.option(
     "--max-duplicate-count",

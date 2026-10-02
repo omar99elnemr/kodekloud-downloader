@@ -112,9 +112,25 @@ This will display the FFmpeg version and build information, confirming that the 
 
 ## 🔐 Authentication
 
-KodeKloud uses Firebase ID Tokens (JWT) for authentication, which expire after about 1 hour. You need to obtain this token from your browser and pass it to the downloader.
+KodeKloud uses Firebase ID Tokens (JWT) for authentication, which expire after about 1 hour. You have two options to authenticate:
 
-### How to get the token:
+### Option 1: Automatic Browser Extraction (Recommended)
+
+If you have Playwright installed, the tool can automatically launch a hidden Chrome instance, wait for you to sign in (or use your active session), and extract the token perfectly.
+
+```bash
+# Requires Playwright to be installed:
+pip install "kodekloud-downloader[browser]"
+playwright install chromium
+
+kodekloud dl --browser -o . "https://kodekloud.com/courses/..."
+```
+
+### Option 2: Manual Bearer Token (Fallback)
+
+If you cannot use the browser method, you can manually grab the token and pass it.
+
+#### How to get the token:
 1. Open your browser and sign in to [KodeKloud](https://learn.kodekloud.com).
 2. Open **Developer Tools** (F12 or Right-Click -> Inspect).
 3. Go to the **Network** tab and filter by `Fetch/XHR`.
@@ -123,9 +139,9 @@ KodeKloud uses Firebase ID Tokens (JWT) for authentication, which expire after a
 6. Look in the **Request Headers** for the `authorization` header.
 7. Copy the entire string **after** the word `Bearer ` (it starts with `eyJ...`).
 
-### How to use the token:
+#### How to use the token:
 
-**Option 1: Environment Variable (Recommended)**
+**Environment Variable (Best)**
 ```bash
 # Windows PowerShell
 $env:KODEKLOUD_TOKEN="eyJhbG..."
@@ -137,12 +153,10 @@ export KODEKLOUD_TOKEN="eyJhbG..."
 kodekloud dl -o . "https://kodekloud.com/courses/..."
 ```
 
-**Option 2: Command Line Flag**
+**Command Line Flag**
 ```bash
 kodekloud dl --token "eyJhbG..." -o . "https://kodekloud.com/courses/..."
 ```
-
-*(Legacy note: The `--browser` and `--cookie` flags are still available but may not work reliably due to API changes.)*
 
 ## 💻 Installation
 
@@ -202,12 +216,6 @@ uv run mypy src/
 uv run pytest --cov=src/
 ```
 
-### Authentication (Development)
-
-Authentication requires passing a Bearer token which you can extract manually via the browser DevTools (see the main Authentication section above).
-
-The legacy `session-cookie` approach is largely obsolete since KodeKloud removed `session-cookie` from their systems. Passing `--browser` or a `cookies.txt` will still attempt to find tokens in Local Storage or indexed DB if possible, but the manual Bearer token method is the most reliable.
-
 ## Try in Browser
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1GsgFcqa_43GYeDKmoa0CXsRfDySrzvzT?usp=sharing)
 
@@ -226,7 +234,7 @@ Options:
                                   be store.
   -t, --token TEXT                Bearer auth token (Firebase ID token). Overrides KODEKLOUD_TOKEN.
   -c, --cookie TEXT               (Legacy) Cookie file exported from browser.
-  --browser                       (Legacy) Extract session token from running Chrome.
+  --browser                       Automatically extract Bearer token from running Chrome (requires playwright).
   -mdc, --max-duplicate-count INTEGER
                                   If same video is downloaded this many times,
                                   then download stops
