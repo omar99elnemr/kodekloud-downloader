@@ -164,6 +164,36 @@ def download_video(
         browser-based auth)
     :param quality: The video quality (e.g. "720p")
     """
+
+    # Verification / Cleanup phase:
+    # If the final .mkv doesn't exist but intermediate files do (like orphaned
+    # .mp4 audio/video streams, or .part fragments from an aborted run),
+    # yt-dlp might struggle to merge them or resume properly. We clean them up
+    # so yt-dlp can redownload or resume cleanly.
+    final_mkv = output_path.with_suffix(".mkv")
+    if not final_mkv.exists():
+        parent_dir = output_path.parent
+        base_name = output_path.name
+        if parent_dir.exists():
+            for file in parent_dir.iterdir():
+                if (
+                    file.name.startswith(base_name)
+                    and file.suffix != ".mkv"
+                    and file.suffix != ".vtt"
+                ):
+                    # Delete intermediate video/audio streams, parts, and ytdl metadata
+                    if (
+                        file.suffix in (".mp4", ".part", ".ytdl", ".webm", ".m4a")
+                        or ".part-Frag" in file.name
+                    ):
+                        try:
+                            logger.info(
+                                f"Cleaning up incomplete/orphaned part: {file.name}"
+                            )
+                            file.unlink()
+                        except Exception as e:
+                            logger.debug(f"Failed to delete {file.name}: {e}")
+
     headers = {
         "Referer": "https://learn.kodekloud.com/",
     }

@@ -1,13 +1,13 @@
 """
 Optional browser-based session token extraction via Playwright.
 
-This module allows extracting the HttpOnly ``session-cookie`` directly from
+This module allows extracting the Firebase Bearer token directly from
 a Chrome browser via the Chrome DevTools Protocol (CDP).
 
 Usage
 -----
 Run with ``--browser`` to auto-launch Chrome, sign in to KodeKloud, and
-extract the session token:
+extract the bearer token:
 
     kodekloud dl --browser -o . "https://kodekloud.com/courses/..."
 
@@ -119,11 +119,10 @@ def _launch_chrome_with_debugging(port: int) -> Optional[subprocess.Popen]:
         return None
 
 
-def _extract_session_cookie(context) -> Optional[str]:
-    """Extract the ``session-cookie`` from the Playwright browser context."""
-    for cookie in context.cookies():
-        if cookie["name"] == "session-cookie":
-            return cookie["value"]
+def _extract_bearer_token(context) -> Optional[str]:
+    """Attempt to extract token from LocalStorage if possible (fallback)."""
+    # Note: Firebase auth stores token in indexedDB usually, so this is hard.
+    # The best way is network interception. We'll rely entirely on network interception.
     return None
 
 
@@ -131,7 +130,7 @@ def get_session_token_from_browser(
     port: int = CDP_PORT,
     auto_launch: bool = False,
 ) -> Optional[str]:
-    """Extract the ``session-cookie`` from a Chrome browser via CDP.
+    """Extract the Firebase Bearer token from a Chrome browser via CDP.
 
     Tries connecting to a running Chrome instance first. If that fails
     and ``auto_launch`` is enabled, starts a new Chrome with remote
@@ -147,7 +146,7 @@ def get_session_token_from_browser(
 
     Returns
     -------
-    The ``session-cookie`` value, or None.
+    The bearer token value, or None.
     """
     sp = _import_playwright()
     if sp is None:
@@ -210,18 +209,19 @@ def get_session_token_from_browser(
 
         page = context.pages[0] if context.pages else context.new_page()
 
-        # Check if we already have the cookie (connecting to existing browser)
-        token = _extract_session_cookie(context)
-        if token:
-            logger.info("Session token found in existing cookies")
-            if chrome_proc is not None:
-                chrome_proc.terminate()
-            else:
-                browser.close()
-            return token
+        intercepted_token: Optional[str] = None
+
+        def _handle_request(request):
+            nonlocal intercepted_token
+            if "learn-api.kodekloud.com" in request.url:
+                auth_header = request.headers.get("authorization", "")
+                if auth_header.lower().startswith("bearer "):
+                    intercepted_token = auth_header.split(" ", 1)[1]
+
+        page.on("request", _handle_request)
 
         # Navigate to KodeKloud
-        logger.info("Navigating to KodeKloud...")
+        logger.info("Navigating to KodeKloud to intercept token...")
         try:
             page.goto(
                 "https://learn.kodekloud.com/user/courses",
@@ -231,36 +231,21 @@ def get_session_token_from_browser(
         except Exception:
             pass
 
-        # Small pause for SPA redirects
-        time.sleep(2)
+        # Small pause for SPA redirects and network requests
+        for _ in range(3):
+            if intercepted_token:
+                break
+            time.sleep(1)
 
-        # Check again after navigation
-        token = _extract_session_cookie(context)
-        if token:
-            logger.info("Session token obtained after navigation")
+        if intercepted_token:
+            logger.info("Bearer token intercepted successfully from network")
             if chrome_proc is not None:
                 chrome_proc.terminate()
             else:
                 browser.close()
-            return token
+            return intercepted_token
 
         # --- Step 4: if not logged in, prompt user ---
-        # Set up a network response handler to catch the session-cookie
-        # from the set-id-token API call
-        intercepted_token: Optional[str] = None
-
-        def _handle_response(response):
-            nonlocal intercepted_token
-            if "/api/set-id-token" in response.url:
-                set_cookie = response.headers.get("set-cookie", "")
-                for part in set_cookie.split(";"):
-                    part = part.strip()
-                    if part.startswith("session-cookie="):
-                        intercepted_token = part.split("=", 1)[1]
-                        logger.info("Intercepted session-cookie from API")
-
-        page.on("response", _handle_response)
-
         current_url = page.url.lower()
         if all(
             word not in current_url for word in ["sign-in", "login", "auth", "signin"]
@@ -283,86 +268,31 @@ def get_session_token_from_browser(
         except (EOFError, KeyboardInterrupt):
             pass
 
-        # Wait for the session-cookie to arrive via network interception
-        logger.info("Waiting for session-cookie...")
+        # Wait for the bearer token to arrive via network interception
+        logger.info("Waiting for bearer token...")
+        try:
+            page.goto(
+                "https://learn.kodekloud.com/user/courses",
+                wait_until="networkidle",
+                timeout=30000,
+            )
+        except Exception:
+            pass
+
         for _ in range(20):  # wait up to ~40s
             if intercepted_token:
                 break
             time.sleep(2)
 
-        token = intercepted_token
-
-        # Fallback: try extracting from cookies
-        if token is None:
-            try:
-                page.goto(
-                    "https://learn.kodekloud.com/user/courses",
-                    wait_until="networkidle",
-                    timeout=30000,
-                )
-            except Exception:
-                pass
-            for _ in range(10):
-                time.sleep(2)
-                try:
-                    token = _extract_session_cookie(context)
-                except Exception:
-                    continue
-                if token:
-                    break
-
         # Cleanup
         if chrome_proc is not None:
             chrome_proc.terminate()
         else:
             browser.close()
 
-        if token:
-            logger.info("Session token extracted successfully")
+        if intercepted_token:
+            logger.info("Bearer token extracted successfully")
         else:
-            print(
-                "Could not find session-cookie. Ensure you are signed in to KodeKloud."
-            )
+            print("Could not find bearer token. Ensure you are signed in to KodeKloud.")
 
-        return token
-
-        # --- Step 4: if not logged in, prompt user ---
-        current_url = page.url
-        if "sign-in" in current_url.lower() or "login" in current_url.lower():
-            print(
-                "Please sign in to KodeKloud in the opened browser window, "
-                "then press Enter here..."
-            )
-            try:
-                input()
-            except (EOFError, KeyboardInterrupt):
-                pass
-
-            # Wait a moment for redirect after login
-            time.sleep(3)
-            try:
-                page.goto(
-                    "https://learn.kodekloud.com/user/courses",
-                    wait_until="networkidle",
-                    timeout=30000,
-                )
-            except Exception:
-                pass
-
-        # --- Step 5: final extraction attempt ---
-        token = _extract_session_cookie(context)
-
-        # Cleanup
-        if chrome_proc is not None:
-            chrome_proc.terminate()
-        else:
-            browser.close()
-
-        if token:
-            logger.info("Session token extracted successfully")
-        else:
-            print(
-                "Could not find session-cookie. Ensure you are signed in to KodeKloud."
-            )
-
-        return token
+        return intercepted_token

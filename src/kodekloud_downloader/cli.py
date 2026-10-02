@@ -108,14 +108,14 @@ def dl(
         raw = get_session_token_from_browser(auto_launch=True)
         if not raw:
             logging.error(
-                "Could not obtain session token from browser. "
+                "Could not obtain bearer token from browser. "
                 "Make sure Chrome is running with --remote-debugging-port=9222 "
                 "and you are signed in to https://learn.kodekloud.com. "
                 "Alternatively, set KODEKLOUD_TOKEN or use --token."
             )
             raise SystemExit(1)
         api_client = ApiClient(raw)
-        logging.info("Session token extracted from browser successfully")
+        logging.info("Bearer token extracted from browser successfully")
     elif cookie:
         from kodekloud_downloader.helpers import parse_token
 
