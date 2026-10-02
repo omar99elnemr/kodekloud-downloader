@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import requests
 from requests import Response
@@ -52,8 +52,9 @@ class ApiClient:
         or the ``--token`` CLI option.  Never stored in repr or logs.
     """
 
-    def __init__(self, token: str) -> None:
+    def __init__(self, token: str, token_refresher: Optional[Callable[[], Optional[str]]] = None) -> None:
         self._token = token
+        self._token_refresher = token_refresher
         self._session = requests.Session()
         self._session.headers.update({"Authorization": f"Bearer {token}"})
 
@@ -96,6 +97,16 @@ class ApiClient:
                 continue
 
             if resp.status_code in (401, 403):
+                # Try to refresh token if we have a callback
+                if self._token_refresher:
+                    logger.info("Token expired (HTTP %d). Attempting to refresh...", resp.status_code)
+                    new_token = self._token_refresher()
+                    if new_token:
+                        logger.info("Successfully refreshed token! Retrying request...")
+                        self._token = new_token.strip()
+                        self._session.headers["Authorization"] = f"Bearer {self._token}"
+                        continue
+                        
                 raise TokenExpiredError(
                     f"\n\nAPI returned HTTP {resp.status_code} — your token has "
                     "likely expired (Firebase ID tokens live ~1 hour).\n\n"

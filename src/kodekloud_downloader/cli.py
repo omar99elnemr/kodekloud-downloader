@@ -114,7 +114,11 @@ def dl(
                 "Alternatively, set KODEKLOUD_TOKEN or use --token."
             )
             raise SystemExit(1)
-        api_client = ApiClient(raw)
+        
+        def refresher() -> Optional[str]:
+            return get_session_token_from_browser(auto_launch=True)
+            
+        api_client = ApiClient(raw, token_refresher=refresher)
         logging.info("Bearer token extracted from browser successfully")
     elif cookie:
         from kodekloud_downloader.helpers import parse_token
