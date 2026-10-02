@@ -20,7 +20,7 @@ def test_api_client_adds_auth():
     )
     client = ApiClient("my_fake_token")
     resp = client.get_json("https://learn-api.kodekloud.com/test")
-    
+
     assert resp == {"ok": True}
     req = responses.calls[0].request
     assert req.headers["Authorization"] == "Bearer my_fake_token"
@@ -35,10 +35,10 @@ def test_api_client_401_raises_expired_error():
         status=401,
     )
     client = ApiClient("my_fake_token")
-    
+
     with pytest.raises(TokenExpiredError) as exc_info:
         client.get("https://learn-api.kodekloud.com/test")
-        
+
     assert "token has likely expired" in str(exc_info.value)
     assert "HTTP 401" in str(exc_info.value)
 
@@ -46,7 +46,7 @@ def test_api_client_401_raises_expired_error():
 @responses.activate
 def test_parse_course_from_url_with_api_client():
     client = ApiClient("my_fake_token")
-    
+
     # Mock the course detail endpoint
     responses.add(
         responses.GET,
@@ -81,12 +81,12 @@ def test_parse_course_from_url_with_api_client():
         },
         status=200,
     )
-    
+
     # Test new URL style
     course = parse_course_from_url("https://learn.kodekloud.com/learn/courses/some-course-slug", client)
     assert course.slug == "some-course-slug"
     assert course.title == "Some Course"
-    
+
     # Test old URL style
     course2 = parse_course_from_url("https://kodekloud.com/courses/some-course-slug", client)
     assert course2.id == "123"

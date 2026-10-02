@@ -106,7 +106,7 @@ class ApiClient:
                         self._token = new_token.strip()
                         self._session.headers["Authorization"] = f"Bearer {self._token}"
                         continue
-                        
+
                 raise TokenExpiredError(
                     f"\n\nAPI returned HTTP {resp.status_code} — your token has "
                     "likely expired (Firebase ID tokens live ~1 hour).\n\n"

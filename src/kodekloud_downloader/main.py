@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
@@ -114,6 +115,20 @@ def parse_course_from_url(
     return fetch_course_detail(course_slug, api_client)
 
 
+@dataclass
+class CourseProgress:
+    title: str
+    total_lessons: int = 0
+    completed: int = 0
+    failed: int = 0
+    skipped: int = 0
+
+    @property
+    def percentage(self) -> float:
+        if self.total_lessons == 0:
+            return 100.0
+        return (self.completed / self.total_lessons) * 100
+
 def download_course(
     course: Union[Course, CourseDetail, EnrolledCourse],
     quality: str,
@@ -121,7 +136,7 @@ def download_course(
     max_duplicate_count: int,
     api_client: ApiClient,
     cookie: Optional[str] = None,
-) -> None:
+) -> CourseProgress:
     """
     Download a course from KodeKloud.
 
@@ -132,6 +147,8 @@ def download_course(
     :param api_client: Authenticated API client (handles Bearer token)
     :param cookie: Cookie file path for yt-dlp (video download only).
     """
+    progress = CourseProgress(title=course.title)
+
     params = {
         "course_id": course.id,
     }
@@ -141,6 +158,9 @@ def download_course(
         if isinstance(course, (Course, EnrolledCourse))
         else course
     )
+
+    for module in course_detail.modules:
+        progress.total_lessons += len(module.lessons)
 
     downloaded_videos: defaultdict = defaultdict(int)
     for module_index, module in enumerate(course_detail.modules, start=1):
@@ -168,6 +188,7 @@ def download_course(
             if lesson.type == "video":
                 lesson_video_url = lesson_data.get("video_url")
                 if not lesson_video_url:
+                    progress.skipped += 1
                     continue
                 # TODO: Maybe if in future KodeKloud change the video streaming
                 # service, this area will need some working.
@@ -185,10 +206,20 @@ def download_course(
                         "expired or you don't have access/enrolled to the "
                         "course.\nPlease refresh the token and try again."
                     )
-                download_video_lesson(current_video_url, file_path, cookie, quality)
+                if download_video_lesson(current_video_url, file_path, cookie, quality):
+                    progress.completed += 1
+                else:
+                    progress.failed += 1
                 downloaded_videos[current_video_url] += 1
             elif lesson.type == "article":
-                download_resource_lesson(lesson_data, file_path, api_client)
+                if download_resource_lesson(lesson_data, file_path, api_client):
+                    progress.completed += 1
+                else:
+                    progress.failed += 1
+            else:
+                progress.skipped += 1
+
+    return progress
 
 
 # Maximum safe path length (Windows MAX_PATH is 260, leave room for
@@ -262,7 +293,7 @@ def download_video_lesson(
     file_path: Path,
     cookie: Optional[str],
     quality: str,
-) -> None:
+) -> bool:
     """
     Download a video lesson.
 
@@ -281,21 +312,24 @@ def download_video_lesson(
             cookie=cookie,
             quality=quality,
         )
+        return True
     except yt_dlp.utils.UnsupportedError:
         logger.error(
             f"Could not download video in link {lesson_video_url}. "
             "Please open link manually and verify that video exists!"
         )
+        return False
     except yt_dlp.utils.DownloadError as ex:
         logger.error(
             f"Access denied while downloading video or audio file from link "
             f"{lesson_video_url}\n{ex}"
         )
+        return False
 
 
 def download_resource_lesson(
     lesson_data: dict, file_path: Path, api_client: ApiClient
-) -> None:
+) -> bool:
     """
     Download an article/resource lesson.
 
@@ -305,7 +339,7 @@ def download_resource_lesson(
     """
     content_str = lesson_data.get("content")
     if not content_str:
-        return
+        return False
 
     logger.info(f"Writing resource file... {file_path}...")
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -316,7 +350,12 @@ def download_resource_lesson(
     except Exception:
         md_content = content_str
 
-    file_path.with_suffix(".md").write_text(md_content, encoding="utf-8")
+    try:
+        file_path.with_suffix(".md").write_text(md_content, encoding="utf-8")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to write resource file {file_path}: {e}")
+        return False
 
     # Try parsing for PDFs in the raw content
     soup = BeautifulSoup(content_str, "html.parser")

@@ -114,10 +114,10 @@ def dl(
                 "Alternatively, set KODEKLOUD_TOKEN or use --token."
             )
             raise SystemExit(1)
-        
+
         def refresher() -> Optional[str]:
             return get_session_token_from_browser(auto_launch=True, is_refresh=True)
-            
+
         api_client = ApiClient(raw, token_refresher=refresher)
         logging.info("Bearer token extracted from browser successfully")
     elif cookie:
@@ -143,33 +143,59 @@ def dl(
     # ------------------------------------------------------------------
     # 2. Select course(s) and download.
     # ------------------------------------------------------------------
+    from typing import List
+
+    from kodekloud_downloader.main import CourseProgress
+    results: List[CourseProgress] = []
+
+    def print_summary():
+        if not results:
+            return
+        print("\n" + "=" * 60)
+        print(" DOWNLOAD SUMMARY ".center(60, "="))
+        print("=" * 60)
+        for r in results:
+            status = "COMPLETE" if r.percentage >= 100.0 else "INCOMPLETE"
+            print(f"• {r.title}")
+            print(f"  Status:  {status} ({r.completed}/{r.total_lessons} lessons downloaded)")
+            if r.failed > 0:
+                print(f"  Failed:  {r.failed}")
+            if r.skipped > 0:
+                print(f"  Skipped: {r.skipped}")
+            print("-" * 60)
+
     try:
         if course_url is None:
             courses = fetch_enrolled_courses(api_client)
             selected_courses = select_courses(courses)
             for selected_course in selected_courses:
-                download_course(
+                progress = download_course(
                     course=selected_course,
                     quality=quality,
                     output_dir=output_dir,
                     max_duplicate_count=max_duplicate_count,
                     api_client=api_client,
                 )
+                results.append(progress)
         elif validators.url(course_url):
             course_detail = parse_course_from_url(course_url, api_client)
-            download_course(
+            progress = download_course(
                 course=course_detail,
                 quality=quality,
                 output_dir=output_dir,
                 max_duplicate_count=max_duplicate_count,
                 api_client=api_client,
             )
+            results.append(progress)
         else:
             logging.error("Please enter a valid URL")
             raise SystemExit(1)
+    except KeyboardInterrupt:
+        print("\n\n[!] Download interrupted by user.")
     except TokenExpiredError as exc:
         logging.error(str(exc))
-        raise SystemExit(1)
+    finally:
+        print_summary()
 
 
 @kodekloud.command()
