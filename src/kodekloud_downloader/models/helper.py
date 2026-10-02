@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 from kodekloud_downloader.api_client import LEARN_API_BASE
 
 
-def fetch_enrolled_courses(api_client: "ApiClient") -> List[EnrolledCourse]:
+def fetch_enrolled_courses(api_client: ApiClient) -> List[EnrolledCourse]:
     """Return the list of courses the authenticated user is enrolled in.
 
     Uses ``GET /api/courses/enrolled`` with Bearer auth.
@@ -38,7 +38,7 @@ def fetch_courses(page: int, limit: int) -> ApiResponse:
 
 
 def collect_all_courses(
-    api_client: "Optional[ApiClient]" = None,
+    api_client: Optional[ApiClient] = None,
 ) -> List[Course]:
     """Collect all courses from the public paginated endpoint.
 
@@ -57,7 +57,9 @@ def collect_all_courses(
     return all_courses
 
 
-def fetch_course_detail(slug: str, api_client: "Optional[ApiClient]" = None) -> CourseDetail:
+def fetch_course_detail(
+    slug: str, api_client: Optional[ApiClient] = None
+) -> CourseDetail:
     """Fetch full course detail (modules + lessons) for *slug*.
 
     Passes Bearer auth when *api_client* is given, falls back to an
@@ -90,4 +92,3 @@ if __name__ == "__main__":
         enrolled = fetch_enrolled_courses(client)
         for course in enrolled[:3]:
             print(course.title, "|", course.plan)
-

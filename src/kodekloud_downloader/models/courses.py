@@ -11,9 +11,9 @@ class Category(BaseModel):
 class Tutor(BaseModel):
     id: str
     name: str
-    bio: str
-    description: str
-    avatar_url: HttpUrl
+    bio: Optional[str] = None
+    description: Optional[str] = None
+    avatar_url: Optional[HttpUrl] = None
 
 
 class Course(BaseModel):
@@ -58,4 +58,3 @@ class Metadata(BaseModel):
 class ApiResponse(BaseModel):
     courses: List[Course]
     metadata: Metadata
-

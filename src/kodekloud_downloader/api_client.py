@@ -144,4 +144,3 @@ class ApiClient:
         resp = self.get(url, **kwargs)
         resp.raise_for_status()
         return resp.json()
-
