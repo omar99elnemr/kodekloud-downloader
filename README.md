@@ -126,6 +126,8 @@ playwright install chromium
 kodekloud dl --browser -o . "https://kodekloud.com/courses/..."
 ```
 
+> **Tip**: You can set the environment variable `KODEKLOUD_USE_BROWSER=1` (e.g. `$env:KODEKLOUD_USE_BROWSER="1"`) to make the tool automatically use the browser without needing to type `--browser` every time.
+
 ### Option 2: Manual Bearer Token (Fallback)
 
 If you cannot use the browser method, you can manually grab the token and pass it.
