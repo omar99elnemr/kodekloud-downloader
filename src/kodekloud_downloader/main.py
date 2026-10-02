@@ -1,13 +1,16 @@
+from __future__ import annotations
+
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import markdownify
 import requests
 import yt_dlp
 from bs4 import BeautifulSoup
 
+from kodekloud_downloader.api_client import LEARN_API_BASE
 from kodekloud_downloader.helpers import (
     download_all_pdf,
     download_video,
@@ -15,9 +18,12 @@ from kodekloud_downloader.helpers import (
     sanitize_filename,
 )
 from kodekloud_downloader.models.course import CourseDetail
-from kodekloud_downloader.models.courses import Course
+from kodekloud_downloader.models.courses import Course, EnrolledCourse
 from kodekloud_downloader.models.helper import fetch_course_detail
 from kodekloud_downloader.models.quiz import Quiz
+
+if TYPE_CHECKING:
+    from kodekloud_downloader.api_client import ApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -89,47 +95,50 @@ def download_quiz(output_dir: Union[str, Path], sep: bool) -> None:
         print(f"Quiz file written in {output_file}")
 
 
-def parse_course_from_url(url: str) -> CourseDetail:
+def parse_course_from_url(url: str, api_client: "Optional[ApiClient]" = None) -> CourseDetail:
     """
     Parse the course slug from the given URL and fetch the course details.
 
+    Supports both old and new URL formats:
+    - https://kodekloud.com/courses/<slug>
+    - https://learn.kodekloud.com/learn/courses/<slug>
+
     :param url: The URL from which to extract the course slug.
+    :param api_client: Authenticated API client (Bearer token).
     :return: An instance of `CourseDetail` containing the course details.
     :raises ValueError: If the URL does not contain a valid course slug.
     """
     url = url.strip("/")
     course_slug = url.split("/")[-1]
-    return fetch_course_detail(course_slug)
+    return fetch_course_detail(course_slug, api_client)
 
 
 def download_course(
-    course: Union[Course, CourseDetail],
+    course: Union[Course, CourseDetail, EnrolledCourse],
     quality: str,
     output_dir: Union[str, Path],
     max_duplicate_count: int,
-    session_token: str,
+    api_client: "ApiClient",
     cookie: Optional[str] = None,
 ) -> None:
     """
     Download a course from KodeKloud.
 
-    :param course: The Course or CourseDetail object
+    :param course: The Course, EnrolledCourse, or CourseDetail object
     :param quality: The video quality (e.g. "720p")
     :param output_dir: The output directory for the downloaded course
-    :param max_duplicate_count: Maximum duplicate video before after cookie
-        expire message will be raised
-    :param session_token: The Bearer token for API authentication
-    :param cookie: Cookie file path for yt-dlp (video download). Not needed
-        when using --browser mode (playwright handles auth).
+    :param max_duplicate_count: Maximum duplicate video count before stopping
+    :param api_client: Authenticated API client (handles Bearer token)
+    :param cookie: Cookie file path for yt-dlp (video download only).
     """
-    session = requests.Session()
-    headers = {"authorization": f"Bearer {session_token}"}
     params = {
         "course_id": course.id,
     }
 
     course_detail = (
-        fetch_course_detail(course.slug) if isinstance(course, Course) else course
+        fetch_course_detail(course.slug, api_client)
+        if isinstance(course, (Course, EnrolledCourse))
+        else course
     )
 
     downloaded_videos: defaultdict = defaultdict(int)
@@ -145,9 +154,9 @@ def download_course(
             )
 
             if lesson.type == "video":
-                url = f"https://learn-api.kodekloud.com/api/lessons/{lesson.id}"
+                url = f"{LEARN_API_BASE}/api/lessons/{lesson.id}"
 
-                response = session.get(url, headers=headers, params=params)
+                response = api_client.get(url, params=params)
                 response.raise_for_status()
                 lesson_video_url = response.json()["video_url"]
                 # TODO: Maybe if in future KodeKloud change the video streaming
@@ -162,15 +171,17 @@ def download_course(
                 ):
                     raise SystemExit(
                         f"The following video is downloaded more than "
-                        f"{max_duplicate_count}.\nYour cookie might have "
+                        f"{max_duplicate_count}.\nYour token might have "
                         "expired or you don't have access/enrolled to the "
-                        "course.\nPlease refresh/regenerate the cookie or "
-                        "enroll in the course and try again."
+                        "course.\nPlease refresh the token and try again."
                     )
                 download_video_lesson(current_video_url, file_path, cookie, quality)
                 downloaded_videos[current_video_url] += 1
             else:
-                lesson_url = f"https://learn.kodekloud.com/user/courses/{course.slug}/module/{module.id}/lesson/{lesson.id}"
+                lesson_url = (
+                    f"https://learn.kodekloud.com/user/courses/{course.slug}"
+                    f"/module/{module.id}/lesson/{lesson.id}"
+                )
                 download_resource_lesson(lesson_url, file_path, cookie)
 
 

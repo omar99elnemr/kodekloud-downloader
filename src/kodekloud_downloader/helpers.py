@@ -2,13 +2,13 @@ import logging
 import re
 import string
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import prettytable
 import requests
 import yt_dlp
 
-from kodekloud_downloader.models.courses import Course
+from kodekloud_downloader.models.courses import Course, EnrolledCourse
 
 logger = logging.getLogger(__name__)
 
@@ -44,45 +44,43 @@ def parse_input(input_str: str) -> List[int]:
     return result
 
 
-def select_courses(courses: List[Course]) -> List[Course]:
+def select_courses(
+    courses: List[Union[Course, EnrolledCourse]],
+) -> List[Union[Course, EnrolledCourse]]:
     """
     Display a table of courses and ask the user to select one or
     multiple courses by entering its number.
 
-    :param courses: A list of Course objects to choose from
-    :return: The selected list of Course object
+    :param courses: A list of Course or EnrolledCourse objects to choose from
+    :return: The selected list of course objects
     """
     table = prettytable.PrettyTable()
-    table.field_names = ["No.", "Name", "Type", "Categories"]
+    table.field_names = ["No.", "Name", "Plan", "Difficulty", "Categories"]
 
     for i, course in enumerate(courses):
-        table.add_row(
-            [
-                i + 1,
-                course.title,
-                course.plan,
-                ", ".join([category.name for category in course.categories]),
-            ]
-        )
+        categories = ", ".join([c.name for c in course.categories])
+        difficulty = course.difficulty_level or ""
+        table.add_row([i + 1, course.title, course.plan, difficulty, categories])
 
     table.align["No."] = "l"
     table.align["Name"] = "l"
-    table.align["Type"] = "l"
+    table.align["Plan"] = "l"
+    table.align["Difficulty"] = "l"
     table.align["Categories"] = "l"
 
     print(table)
 
-    user_selected_courses = []
-    selected_courses = parse_input(
+    user_selected: List[Union[Course, EnrolledCourse]] = []
+    selected_indices = parse_input(
         input(
             "Enter the courses you want to select "
-            "(Multiple courses can be passes using this format 1,6-9,10-11): "
+            "(Multiple courses can be passed using this format 1,6-9,10-11): "
         )
     )
-    for selected_course in selected_courses:
-        user_selected_courses.append(courses[int(selected_course) - 1])
+    for idx in selected_indices:
+        user_selected.append(courses[int(idx) - 1])
 
-    return user_selected_courses
+    return user_selected
 
 
 # Characters not allowed in Windows filenames
