@@ -112,24 +112,37 @@ This will display the FFmpeg version and build information, confirming that the 
 
 ## 🔐 Authentication
 
-You have two options to authenticate:
+KodeKloud uses Firebase ID Tokens (JWT) for authentication, which expire after about 1 hour. You need to obtain this token from your browser and pass it to the downloader.
 
-### Option 1: Browser-based (recommended)
+### How to get the token:
+1. Open your browser and sign in to [KodeKloud](https://learn.kodekloud.com).
+2. Open **Developer Tools** (F12 or Right-Click -> Inspect).
+3. Go to the **Network** tab and filter by `Fetch/XHR`.
+4. Refresh the page or click on any course.
+5. Click on any network request going to `learn-api.kodekloud.com` (e.g. `courses/enrolled`).
+6. Look in the **Request Headers** for the `authorization` header.
+7. Copy the entire string **after** the word `Bearer ` (it starts with `eyJ...`).
 
-```console
-kodekloud dl --browser -o . "https://kodekloud.com/courses/..."
+### How to use the token:
+
+**Option 1: Environment Variable (Recommended)**
+```bash
+# Windows PowerShell
+$env:KODEKLOUD_TOKEN="eyJhbG..."
+
+# Linux / macOS
+export KODEKLOUD_TOKEN="eyJhbG..."
+
+# Run the tool normally
+kodekloud dl -o . "https://kodekloud.com/courses/..."
 ```
 
-Auto-launches Chrome, you sign in once, and the token is extracted automatically.
-Requires `pip install "kodekloud-downloader[browser]"`.
+**Option 2: Command Line Flag**
+```bash
+kodekloud dl --token "eyJhbG..." -o . "https://kodekloud.com/courses/..."
+```
 
-### Option 2: Cookie file
-
-Use [Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc/related)
-or a similar extension to export cookies after signing in at kodekloud.com.
-See [Authentication](#authentication-1) section below for detailed steps.
-
-![](/static/cookie-demo.png)
+*(Legacy note: The `--browser` and `--cookie` flags are still available but may not work reliably due to API changes.)*
 
 ## 💻 Installation
 
@@ -189,51 +202,11 @@ uv run mypy src/
 uv run pytest --cov=src/
 ```
 
-### Authentication
+### Authentication (Development)
 
-#### Option A: Browser-based (recommended, automatic)
+Authentication requires passing a Bearer token which you can extract manually via the browser DevTools (see the main Authentication section above).
 
-If you installed with `[browser]` extras, use the `--browser` flag to extract the
-session token directly from your running Chrome browser:
-
-```console
-# 1. Start Chrome with remote debugging enabled:
-chrome.exe --remote-debugging-port=9222
-
-# 2. Sign in at https://learn.kodekloud.com
-
-# 3. Run the downloader:
-kodekloud dl --browser -o . "https://kodekloud.com/courses/..."
-```
-
-The tool connects to your running Chrome via the DevTools Protocol and extracts the
-HttpOnly `session-cookie` automatically. No manual cookie file editing needed.
-The `session-cookie` is refreshed ~every hour — just re-run with `--browser`.
-
-> **Environment variable**: You can set `KODEKLOUD_USE_BROWSER=1` to make
-> `--browser` the default behavior without passing the flag each time.
-
-#### Option B: Cookie file (lightweight, no extra deps)
-
-Export cookies from kodekloud.com after signing in. Use a browser extension like
-[Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
-and save to `kodekloud.com_cookies.txt`.
-
-KodeKloud uses an **HttpOnly session cookie** (`session-cookie`) for API auth.
-Standard export extensions cannot capture HttpOnly cookies, so you need to add it
-manually:
-
-1. Open DevTools (`F12`) on [learn.kodekloud.com](https://learn.kodekloud.com)
-2. Go to **Application** → **Storage** → **Cookies** → `https://learn.kodekloud.com`
-3. Find `session-cookie`, copy its **Value** (a long JWT token)
-4. Append this line to your cookie file (replace `<VALUE>`):
-   ```
-   .kodekloud.com	TRUE	/	TRUE	0	session-cookie	<VALUE>
-   ```
-
-The `session-cookie` expires after ~1 hour. When you get a 401 error, repeat steps 1-4.
-
-> **Tip**: Install with `[browser]` extras and use `--browser` to skip all manual steps.
+The legacy `session-cookie` approach is largely obsolete since KodeKloud removed `session-cookie` from their systems. Passing `--browser` or a `cookies.txt` will still attempt to find tokens in Local Storage or indexed DB if possible, but the manual Bearer token method is the most reliable.
 
 ## Try in Browser
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1GsgFcqa_43GYeDKmoa0CXsRfDySrzvzT?usp=sharing)
@@ -251,9 +224,9 @@ Options:
                                   Quality of the video to be downloaded.
   -o, --output-dir TEXT           Output directory where downloaded files will
                                   be store.
-  -c, --cookie TEXT               Cookie file exported from browser.
-  --browser                       Extract session token from running Chrome
-                                  (requires playwright).
+  -t, --token TEXT                Bearer auth token (Firebase ID token). Overrides KODEKLOUD_TOKEN.
+  -c, --cookie TEXT               (Legacy) Cookie file exported from browser.
+  --browser                       (Legacy) Extract session token from running Chrome.
   -mdc, --max-duplicate-count INTEGER
                                   If same video is downloaded this many times,
                                   then download stops

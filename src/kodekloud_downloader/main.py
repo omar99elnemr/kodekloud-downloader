@@ -14,7 +14,6 @@ from kodekloud_downloader.api_client import LEARN_API_BASE
 from kodekloud_downloader.helpers import (
     download_all_pdf,
     download_video,
-    is_normal_content,
     sanitize_filename,
 )
 from kodekloud_downloader.models.course import CourseDetail
@@ -95,7 +94,9 @@ def download_quiz(output_dir: Union[str, Path], sep: bool) -> None:
         print(f"Quiz file written in {output_file}")
 
 
-def parse_course_from_url(url: str, api_client: "Optional[ApiClient]" = None) -> CourseDetail:
+def parse_course_from_url(
+    url: str, api_client: Optional[ApiClient] = None
+) -> CourseDetail:
     """
     Parse the course slug from the given URL and fetch the course details.
 
@@ -118,7 +119,7 @@ def download_course(
     quality: str,
     output_dir: Union[str, Path],
     max_duplicate_count: int,
-    api_client: "ApiClient",
+    api_client: ApiClient,
     cookie: Optional[str] = None,
 ) -> None:
     """
@@ -153,12 +154,21 @@ def download_course(
                 lesson.title,
             )
 
-            if lesson.type == "video":
-                url = f"{LEARN_API_BASE}/api/lessons/{lesson.id}"
+            url = f"{LEARN_API_BASE}/api/lessons/{lesson.id}"
+            response = api_client.get(url, params=params)
 
-                response = api_client.get(url, params=params)
-                response.raise_for_status()
-                lesson_video_url = response.json()["video_url"]
+            if response.status_code != 200:
+                logger.warning(
+                    f"Could not fetch lesson detail for {lesson.title}. Skipping."
+                )
+                continue
+
+            lesson_data = response.json()
+
+            if lesson.type == "video":
+                lesson_video_url = lesson_data.get("video_url")
+                if not lesson_video_url:
+                    continue
                 # TODO: Maybe if in future KodeKloud change the video streaming
                 # service, this area will need some working.
                 # Try to generalize this for future enhancement?
@@ -177,12 +187,8 @@ def download_course(
                     )
                 download_video_lesson(current_video_url, file_path, cookie, quality)
                 downloaded_videos[current_video_url] += 1
-            else:
-                lesson_url = (
-                    f"https://learn.kodekloud.com/user/courses/{course.slug}"
-                    f"/module/{module.id}/lesson/{lesson.id}"
-                )
-                download_resource_lesson(lesson_url, file_path, cookie)
+            elif lesson.type == "article":
+                download_resource_lesson(lesson_data, file_path, api_client)
 
 
 # Maximum safe path length (Windows MAX_PATH is 260, leave room for
@@ -288,24 +294,32 @@ def download_video_lesson(
 
 
 def download_resource_lesson(
-    lesson_url, file_path: Path, cookie: Optional[str]
+    lesson_data: dict, file_path: Path, api_client: ApiClient
 ) -> None:
     """
-    Download a resource lesson.
+    Download an article/resource lesson.
 
-    :param lesson_url: The lesson url
-    :param file_path: The output file path for the resource
-    :param cookie: The user's authentication cookie
+    :param lesson_data: The lesson details fetched from the API.
+    :param file_path: The output file path for the resource.
+    :param api_client: The authenticated API client.
     """
-    # TODO: Did we break this? I have no idea.
-    page = requests.get(lesson_url, timeout=30)
-    soup = BeautifulSoup(page.content, "html.parser")
-    content = soup.find("div", class_="learndash_content_wrap")
+    content_str = lesson_data.get("content")
+    if not content_str:
+        return
 
-    if content and is_normal_content(content):
-        logger.info(f"Writing resource file... {file_path}...")
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.with_suffix(".md").write_text(
-            markdownify.markdownify(content.prettify()), encoding="utf-8"
-        )
-        download_all_pdf(content=content, download_path=file_path.parent, cookie=cookie)
+    logger.info(f"Writing resource file... {file_path}...")
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Use markdownify in case the content is HTML
+    try:
+        md_content = markdownify.markdownify(content_str)
+    except Exception:
+        md_content = content_str
+
+    file_path.with_suffix(".md").write_text(md_content, encoding="utf-8")
+
+    # Try parsing for PDFs in the raw content
+    soup = BeautifulSoup(content_str, "html.parser")
+    download_all_pdf(
+        content=soup, download_path=file_path.parent, api_client=api_client
+    )

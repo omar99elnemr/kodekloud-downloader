@@ -2,13 +2,15 @@ import logging
 import re
 import string
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 import prettytable
-import requests
 import yt_dlp
 
 from kodekloud_downloader.models.courses import Course, EnrolledCourse
+
+if TYPE_CHECKING:
+    from kodekloud_downloader.api_client import ApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -197,24 +199,27 @@ def is_normal_content(content) -> bool:
     return not (is_lab or is_feedback)
 
 
-def download_all_pdf(content, download_path: Path, cookie: Optional[str]) -> None:
+def download_all_pdf(content, download_path: Path, api_client: "ApiClient") -> None:
     """
     Download all PDF files from the given content.
 
     :param content: The content containing the PDF links
     :param download_path: The output directory for the downloaded PDFs
-    :param cookie: The user's authentication cookie (None for browser auth)
+    :param api_client: The authenticated API client
     """
     for link in content.find_all("a"):
         href = link.get("href")
-        if href.endswith("pdf"):
+        if href and href.endswith("pdf"):
             file_name = download_path / Path(href).name
             logger.info(f"Downloading {file_name}...")
-            headers = {}
-            if cookie is not None:
-                headers["Cookie"] = cookie
-            response = requests.get(href, headers=headers, timeout=30)
-            file_name.write_bytes(response.content)
+
+            # Request through ApiClient (adds auth and retry)
+            try:
+                response = api_client.get(href)
+                response.raise_for_status()
+                file_name.write_bytes(response.content)
+            except Exception as e:
+                logger.error(f"Failed to download PDF {href}: {e}")
 
 
 def parse_token(cookiefile: str) -> Optional[str]:
