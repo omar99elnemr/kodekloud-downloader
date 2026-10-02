@@ -4,7 +4,7 @@ import string
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
-import prettytable
+import questionary
 import yt_dlp
 
 from kodekloud_downloader.models.courses import Course, EnrolledCourse
@@ -50,39 +50,32 @@ def select_courses(
     courses: List[Union[Course, EnrolledCourse]],
 ) -> List[Union[Course, EnrolledCourse]]:
     """
-    Display a table of courses and ask the user to select one or
-    multiple courses by entering its number.
+    Display a list of courses and ask the user to select one or
+    multiple courses using an interactive checkbox menu.
 
     :param courses: A list of Course or EnrolledCourse objects to choose from
     :return: The selected list of course objects
     """
-    table = prettytable.PrettyTable()
-    table.field_names = ["No.", "Name", "Plan", "Difficulty", "Categories"]
+    if not courses:
+        return []
 
-    for i, course in enumerate(courses):
+    choices = []
+    for course in courses:
         categories = ", ".join([c.name for c in course.categories])
-        difficulty = course.difficulty_level or ""
-        table.add_row([i + 1, course.title, course.plan, difficulty, categories])
+        difficulty = course.difficulty_level or "Unknown"
+        title = course.title
+        display = f"{title} [{difficulty}]"
+        if categories:
+            display += f" ({categories})"
+        choices.append(questionary.Choice(title=display, value=course))
 
-    table.align["No."] = "l"
-    table.align["Name"] = "l"
-    table.align["Plan"] = "l"
-    table.align["Difficulty"] = "l"
-    table.align["Categories"] = "l"
+    selected = questionary.checkbox(
+        "Select the courses you want to download:",
+        choices=choices,
+        instruction="(Use space to select, enter to confirm, up/down to navigate)",
+    ).ask()
 
-    print(table)
-
-    user_selected: List[Union[Course, EnrolledCourse]] = []
-    selected_indices = parse_input(
-        input(
-            "Enter the courses you want to select "
-            "(Multiple courses can be passed using this format 1,6-9,10-11): "
-        )
-    )
-    for idx in selected_indices:
-        user_selected.append(courses[int(idx) - 1])
-
-    return user_selected
+    return selected or []
 
 
 # Characters not allowed in Windows filenames
