@@ -133,3 +133,12 @@ dmypy.json
 KodeKloud/
 cookie*.txt
 KodeKloud_Quiz.md
+
+# Secrets / local auth files
+.env
+.env.*
+*.env
+cookies*.txt
+cookie*.txt
+probe_output*.json
+scripts/probe_output*
